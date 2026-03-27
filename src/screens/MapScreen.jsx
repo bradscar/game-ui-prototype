@@ -113,16 +113,16 @@ export default function MapScreen({ coins, setCoins, skills, setSkills, ftueStep
       }, 300);
       setTimeout(() => {
         setFlippingSkill(null);
-        // FTUE: Complete the tutorial after first upgrade
+        // FTUE: Move to grinding phase after first upgrade
         if (ftueStep === 'upgrade') {
-          setFtueStep('complete');
+          setFtueStep('grinding');
         }
       }, 600);
     } else {
       setSkills(prev => ({ ...prev, [selectedSkillId]: prev[selectedSkillId] + 1 }));
-      // FTUE: Complete the tutorial after first upgrade
+      // FTUE: Move to grinding phase after first upgrade
       if (ftueStep === 'upgrade') {
-        setFtueStep('complete');
+        setFtueStep('grinding');
       }
     }
   };

@@ -134,11 +134,12 @@ function DaysCarousel({ centerIndex, survivedDays, currentAct }) {
   );
 }
 
-function FlyingReward({ type, delay, startX, startY, endX }) {
+function FlyingReward({ type, delay, startX, startY, endX, endY = 30, onComplete }) {
   const icons = {
     coin: { Icon: Coins, color: 'text-yellow-400' },
     gem: { Icon: Gem, color: 'text-purple-400' },
     energy: { Icon: Zap, color: 'text-amber-400' },
+    gear: { Icon: Sword, color: 'text-green-400' },
   };
   const { Icon, color } = icons[type];
 
@@ -147,13 +148,24 @@ function FlyingReward({ type, delay, startX, startY, endX }) {
       className={`absolute ${color}`}
       style={{ zIndex: 100 }}
       initial={{ y: startY, x: startX, scale: 1, opacity: 1 }}
-      animate={{ y: 30, x: endX, scale: 0.5, opacity: 0 }}
+      animate={{ y: endY, x: endX, scale: 0.5, opacity: 0 }}
       transition={{ duration: 0.6, delay, ease: 'easeOut' }}
+      onAnimationComplete={onComplete}
     >
       <Icon size={24} fill="currentColor" />
     </motion.div>
   );
 }
+
+// Gear definitions for random drops
+const gearTypes = [
+  { slot: 'weapon', name: 'Iron Sword' },
+  { slot: 'shield', name: 'Iron Shield' },
+  { slot: 'helmet', name: 'Iron Helm' },
+  { slot: 'chest', name: 'Iron Armor' },
+  { slot: 'boots', name: 'Iron Boots' },
+  { slot: 'ring', name: 'Iron Ring' },
+];
 
 export default function HomeScreen({
   coins, setCoins,
@@ -166,6 +178,12 @@ export default function HomeScreen({
   ftueStep, setFtueStep,
   skills,
   lastRunSkillLevels, setLastRunSkillLevels,
+  runCount, setRunCount,
+  pendingGear, setPendingGear,
+  setActiveTab,
+  inventory, setInventory,
+  equipped,
+  imprints, setImprints,
 }) {
   // Calculate total skill levels for progression
   const totalSkillLevels = Object.values(skills).reduce((sum, level) => sum + level, 0);
@@ -179,11 +197,15 @@ export default function HomeScreen({
   const [actIntroFromPlay, setActIntroFromPlay] = useState(false); // true = show Start button
   const [gameplayOpen, setGameplayOpen] = useState(false);
   const [gameResult, setGameResult] = useState(null); // { victory: bool, days: number }
+  const [droppedGear, setDroppedGear] = useState(null); // Gear dropped this run
 
   // FTUE: Check if we're in a restricted state
   const isFtuePlay = ftueStep === 'play';
   const isFtueSkillTab = ftueStep === 'skill-tab';
-  const isFtueRestricted = ftueStep !== 'complete';
+  const isFtueHeroTab = ftueStep === 'hero-tab';
+  const isPlayDisabled = isFtueSkillTab || isFtueHeroTab;
+  const isFtueRestricted = ftueStep !== 'complete' && ftueStep !== 'grinding';
+  const isChestDisabled = ftueStep === 'play' || ftueStep === 'skill-tab' || ftueStep === 'upgrade';
 
   // Get current milestone and check if it can be claimed
   const currentMilestone = allDays[carouselIndex];
@@ -195,18 +217,6 @@ export default function HomeScreen({
   );
 
   const handlePlay = () => {
-    // If ready for next act, advance to next act and show the intro popup
-    if (readyForNextAct) {
-      const newAct = currentAct + 1;
-      setCurrentAct(newAct);
-      setSurvivedDays(0);
-      setActIntroShown(false);
-      setActIntroFromPlay(true);
-      setActIntroOpen(true);
-      setReadyForNextAct(false);
-      return;
-    }
-
     // Show intro popup on first play of each act (skip Act 1)
     if (currentAct > 1 && survivedDays === 0 && !actIntroShown) {
       setActIntroOpen(true);
@@ -242,13 +252,28 @@ export default function HomeScreen({
       // Defeat - show how far you got
       setGameResult({ victory: false, days: resultDays });
     }
+
+    // Roll for gear drop (33% chance after FTUE complete)
+    if (ftueStep === 'complete' && Math.random() < 0.33) {
+      const randomGear = gearTypes[Math.floor(Math.random() * gearTypes.length)];
+      setDroppedGear({
+        id: Date.now(),
+        slot: randomGear.slot,
+        name: randomGear.name,
+        rarity: 'uncommon', // Green rarity
+      });
+    } else {
+      setDroppedGear(null);
+    }
   };
 
   const handleResultDismiss = () => {
+    const is4thRun = ftueStep === 'grinding' && runCount === 3;
+
     // Spawn coin animation from center of screen to top HUD
-    const coinParticles = [];
+    const newParticles = [];
     for (let i = 0; i < 8; i++) {
-      coinParticles.push({
+      newParticles.push({
         id: `coin-${Date.now()}-${i}`,
         type: 'coin',
         delay: i * 0.04,
@@ -257,8 +282,22 @@ export default function HomeScreen({
         endX: 220,
       });
     }
-    setParticles(coinParticles);
-    setTimeout(() => setParticles([]), 1000);
+
+    // On 4th run during grinding, add gear flying to Hero tab (bottom left)
+    if (is4thRun) {
+      newParticles.push({
+        id: `gear-${Date.now()}`,
+        type: 'gear',
+        delay: 0.3,
+        startX: 230, // Near the gear icon in rewards
+        startY: 380,
+        endX: 50, // Hero tab position (left side of bottom nav)
+        endY: 750, // Bottom of screen where nav is
+      });
+    }
+
+    setParticles(newParticles);
+    setTimeout(() => setParticles([]), 1200);
 
     // Add coins after animation
     setTimeout(() => {
@@ -272,14 +311,50 @@ export default function HomeScreen({
       }, 800); // After coin animation completes
     }
 
+    // FTUE: On 4th run during grinding, set pending gear and advance to hero-tab
+    if (is4thRun) {
+      // Create the gear item
+      const newGear = {
+        id: Date.now(),
+        slot: 'weapon',
+        name: 'Bronze Sword',
+        rarity: 'uncommon',
+      };
+      setPendingGear(newGear);
+
+      setTimeout(() => {
+        setFtueStep('hero-tab');
+      }, 900); // After gear animation reaches the tab
+    }
+
+    // Increment run count during grinding phase
+    if (ftueStep === 'grinding') {
+      setRunCount(c => c + 1);
+    }
+
+    // Add dropped gear to inventory (after FTUE complete)
+    if (droppedGear) {
+      setTimeout(() => {
+        setInventory(prev => [...prev, droppedGear]);
+        setDroppedGear(null);
+      }, 500);
+    }
+
     // Track skill levels at this run for variance calculation
     setLastRunSkillLevels(totalSkillLevels);
 
     if (gameResult.victory) {
-      setSurvivedDays(25);
-      setTimeout(() => {
-        setActCompleteOpen(true);
-      }, 600);
+      const completedAct = currentAct;
+      // Advance to next act immediately
+      setCurrentAct(prev => prev + 1);
+      setSurvivedDays(0);
+      setActIntroShown(false);
+      // Only show imprint popup after completing Act 2
+      if (completedAct === 2) {
+        setTimeout(() => {
+          setActCompleteOpen(true); // Show imprint popup
+        }, 600);
+      }
     } else {
       setSurvivedDays(gameResult.days);
     }
@@ -348,15 +423,21 @@ export default function HomeScreen({
     }, 600);
   };
 
-  const handleActCompleteClaim = () => {
-    // Popup is centered, rewards are roughly in middle of screen
-    spawnFlyingRewards(340, 195);
+  const handleImprint = () => {
+    // Save character state as imprint (save previous act number since we already advanced)
+    const newImprint = {
+      id: Date.now(),
+      number: imprints.length + 1,
+      skills: { ...skills },
+      equipped: { ...equipped },
+      inventory: [...inventory],
+      act: currentAct - 1, // The act we just completed
+      createdAt: new Date().toISOString(),
+    };
+    setImprints(prev => [...prev, newImprint]);
+
     // Close popup
-    setTimeout(() => {
-      setActCompleteOpen(false);
-      // Show gold "NEXT ACT" button (don't advance act yet)
-      setReadyForNextAct(true);
-    }, 600);
+    setActCompleteOpen(false);
   };
 
   return (
@@ -414,17 +495,17 @@ export default function HomeScreen({
       {/* ===== CHEST ===== */}
       <div className="absolute bottom-56 left-0 right-0 flex justify-center">
         <motion.button
-          onClick={() => !isFtueRestricted && canClaim && setChestOpen(true)}
-          whileHover={!isFtueRestricted && canClaim ? { scale: 1.05 } : {}}
-          whileTap={!isFtueRestricted && canClaim ? { scale: 0.95 } : {}}
+          onClick={() => !isChestDisabled && canClaim && setChestOpen(true)}
+          whileHover={!isChestDisabled && canClaim ? { scale: 1.05 } : {}}
+          whileTap={!isChestDisabled && canClaim ? { scale: 0.95 } : {}}
           className={`relative w-20 h-16 rounded-lg border-2 flex items-center justify-center ${
-            isFtueRestricted || !canClaim
+            isChestDisabled || !canClaim
               ? 'bg-gradient-to-b from-slate-600 to-slate-700 border-slate-500 cursor-not-allowed'
               : 'bg-gradient-to-b from-amber-600 to-amber-800 border-amber-500'
           }`}
         >
-          <Box size={32} className={isFtueRestricted || !canClaim ? 'text-slate-500' : 'text-amber-300'} />
-          {canClaim && !isFtueRestricted && (
+          <Box size={32} className={isChestDisabled || !canClaim ? 'text-slate-500' : 'text-amber-300'} />
+          {canClaim && !isChestDisabled && (
             <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-slate-900" />
           )}
         </motion.button>
@@ -434,36 +515,24 @@ export default function HomeScreen({
       <div className="absolute bottom-32 left-0 right-0 flex justify-center">
         <motion.button
           className="relative group"
-          whileHover={(readyForNextAct || energy >= 5) && !isFtueSkillTab ? { scale: 1.05 } : {}}
-          whileTap={(readyForNextAct || energy >= 5) && !isFtueSkillTab ? { scale: 0.95 } : {}}
-          onClick={(readyForNextAct || energy >= 5) && !isFtueSkillTab ? handlePlay : undefined}
-          style={{ cursor: (readyForNextAct || energy >= 5) && !isFtueSkillTab ? 'pointer' : 'not-allowed' }}
+          whileHover={energy >= 5 && !isPlayDisabled ? { scale: 1.05 } : {}}
+          whileTap={energy >= 5 && !isPlayDisabled ? { scale: 0.95 } : {}}
+          onClick={energy >= 5 && !isPlayDisabled ? handlePlay : undefined}
+          style={{ cursor: energy >= 5 && !isPlayDisabled ? 'pointer' : 'not-allowed' }}
         >
-          {readyForNextAct && !isFtueSkillTab ? (
-            <>
-              <div className="absolute -inset-4 rounded-lg blur-xl bg-amber-400/25" />
-              <div className="absolute inset-0 translate-y-1.5 rounded-lg bg-amber-700" />
-              <div className="relative flex items-center justify-center font-bold w-60 h-16 rounded-lg border-t bg-gradient-to-b from-amber-400 to-amber-500 text-white border-amber-300/40">
-                <span className="text-2xl tracking-wider drop-shadow">NEXT ACT</span>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className={`absolute -inset-4 rounded-lg blur-xl ${energy >= 5 && !isFtueSkillTab ? 'bg-green-400/25' : 'bg-slate-400/10'}`} />
-              <div className={`absolute inset-0 translate-y-1.5 rounded-lg ${energy >= 5 && !isFtueSkillTab ? 'bg-green-700' : 'bg-slate-700'}`} />
-              <div className={`relative flex items-center justify-center gap-3 font-bold w-60 h-16 rounded-lg border-t ${
-                energy >= 5 && !isFtueSkillTab
-                  ? 'bg-gradient-to-b from-green-400 to-green-500 text-white border-green-300/40'
-                  : 'bg-gradient-to-b from-slate-500 to-slate-600 text-slate-300 border-slate-400/40'
-              }`}>
-                <span className="text-2xl tracking-wider drop-shadow">PLAY</span>
-                <div className={`flex items-center gap-1 rounded-md px-2 py-1 ${energy >= 5 && !isFtueSkillTab ? 'bg-green-600/50' : 'bg-slate-600/50'}`}>
-                  <span className="text-sm font-bold">5</span>
-                  <Zap size={14} className={energy >= 5 && !isFtueSkillTab ? 'text-amber-300' : 'text-slate-400'} fill="currentColor" />
-                </div>
-              </div>
-            </>
-          )}
+          <div className={`absolute -inset-4 rounded-lg blur-xl ${energy >= 5 && !isPlayDisabled ? 'bg-green-400/25' : 'bg-slate-400/10'}`} />
+          <div className={`absolute inset-0 translate-y-1.5 rounded-lg ${energy >= 5 && !isPlayDisabled ? 'bg-green-700' : 'bg-slate-700'}`} />
+          <div className={`relative flex items-center justify-center gap-3 font-bold w-60 h-16 rounded-lg border-t ${
+            energy >= 5 && !isPlayDisabled
+              ? 'bg-gradient-to-b from-green-400 to-green-500 text-white border-green-300/40'
+              : 'bg-gradient-to-b from-slate-500 to-slate-600 text-slate-300 border-slate-400/40'
+          }`}>
+            <span className="text-2xl tracking-wider drop-shadow">PLAY</span>
+            <div className={`flex items-center gap-1 rounded-md px-2 py-1 ${energy >= 5 && !isPlayDisabled ? 'bg-green-600/50' : 'bg-slate-600/50'}`}>
+              <span className="text-sm font-bold">5</span>
+              <Zap size={14} className={energy >= 5 && !isPlayDisabled ? 'text-amber-300' : 'text-slate-400'} fill="currentColor" />
+            </div>
+          </div>
         </motion.button>
       </div>
 
@@ -489,13 +558,25 @@ export default function HomeScreen({
                   <div style={{ marginTop: '32px' }}>
                     <p className="text-slate-300 text-xs font-semibold uppercase tracking-wider text-center" style={{ marginBottom: '12px' }}>Rewards</p>
                     <div className="flex justify-center gap-3">
-                      <div className="w-14 h-14 bg-slate-700/80 border border-slate-600 rounded-lg flex items-center justify-center">
+                      <div className="w-14 h-14 bg-yellow-900/60 border border-yellow-500 rounded-lg flex items-center justify-center">
                         <Coins size={24} className="text-yellow-400" />
                       </div>
+                      {/* Show gear reward on 4th run (FTUE) */}
+                      {runCount === 3 && ftueStep === 'grinding' && (
+                        <div className="w-14 h-14 bg-green-900/60 border border-green-500 rounded-lg flex items-center justify-center">
+                          <Sword size={24} className="text-green-400" />
+                        </div>
+                      )}
+                      {/* Show random gear drop (33% chance after FTUE) */}
+                      {droppedGear && (
+                        <div className="w-14 h-14 bg-green-900/60 border border-green-500 rounded-lg flex items-center justify-center">
+                          <Sword size={24} className="text-green-400" />
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  {/* Home Button */}
+                  {/* Claim Button */}
                   <div className="flex justify-center" style={{ marginTop: '32px' }}>
                     <motion.button
                       className="relative group"
@@ -503,10 +584,10 @@ export default function HomeScreen({
                       whileTap={{ scale: 0.95 }}
                       onClick={handleResultDismiss}
                     >
-                      <div className="absolute -inset-2 bg-slate-400/15 rounded-lg blur-xl" />
-                      <div className="absolute inset-0 translate-y-1 bg-slate-700 rounded-lg" />
-                      <div className="relative flex items-center justify-center bg-gradient-to-b from-slate-500 to-slate-600 text-white font-bold rounded-lg border-t border-slate-400/40" style={{ width: '140px', height: '42px' }}>
-                        <span className="text-lg tracking-wider drop-shadow">HOME</span>
+                      <div className="absolute -inset-2 bg-green-400/25 rounded-lg blur-xl" />
+                      <div className="absolute inset-0 translate-y-1 bg-green-700 rounded-lg" />
+                      <div className="relative flex items-center justify-center bg-gradient-to-b from-green-400 to-green-500 text-white font-bold rounded-lg border-t border-green-300/40" style={{ width: '140px', height: '42px' }}>
+                        <span className="text-lg tracking-wider drop-shadow">CLAIM</span>
                       </div>
                     </motion.button>
                   </div>
@@ -678,7 +759,7 @@ export default function HomeScreen({
         )}
       </AnimatePresence>
 
-      {/* ===== ACT COMPLETE POPUP ===== */}
+      {/* ===== IMPRINT CHARACTER POPUP ===== */}
       <AnimatePresence>
         {actCompleteOpen && (
           <motion.div
@@ -688,7 +769,7 @@ export default function HomeScreen({
             className="absolute inset-0 flex items-center justify-center z-50"
           >
             {/* Backdrop */}
-            <div className="absolute inset-0 bg-black/60" onClick={() => setActCompleteOpen(false)} />
+            <div className="absolute inset-0 bg-black/60" />
 
             {/* Popup */}
             <motion.div
@@ -696,53 +777,25 @@ export default function HomeScreen({
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.8, opacity: 0 }}
               className="relative bg-slate-800 border border-slate-600 rounded-2xl"
-              style={{ width: '300px', padding: '24px' }}
+              style={{ width: '300px', padding: '32px 24px' }}
             >
-              {/* Exit button */}
-              <motion.button
-                onClick={() => setActCompleteOpen(false)}
-                whileTap={{ scale: 0.9 }}
-                className="absolute top-4 right-4 w-7 h-7 bg-slate-700 border border-slate-600 rounded-lg flex items-center justify-center"
-              >
-                <X size={14} className="text-white" />
-              </motion.button>
-
               {/* Title */}
-              <h2 className="text-amber-400 text-xl font-bold text-center" style={{ marginTop: '8px' }}>
-                {actNames[currentAct - 1]} Complete!
+              <h2 className="text-amber-400 text-2xl font-bold text-center">
+                Imprint Character
               </h2>
-              <p className="text-slate-400 text-sm text-center" style={{ marginTop: '6px' }}>
-                {actDescriptions[currentAct - 1]}
-              </p>
 
-              {/* Rewards Section */}
-              <div style={{ marginTop: '24px' }}>
-                <p className="text-slate-300 text-xs font-semibold uppercase tracking-wider" style={{ marginBottom: '10px' }}>Rewards</p>
-                <div className="flex justify-center gap-3">
-                  <div className="w-14 h-14 bg-slate-700/80 border border-slate-600 rounded-lg flex items-center justify-center">
-                    <Coins size={24} className="text-yellow-400" />
-                  </div>
-                  <div className="w-14 h-14 bg-slate-700/80 border border-slate-600 rounded-lg flex items-center justify-center">
-                    <Gem size={24} className="text-purple-400" />
-                  </div>
-                  <div className="w-14 h-14 bg-slate-700/80 border border-slate-600 rounded-lg flex items-center justify-center">
-                    <Box size={24} className="text-amber-400" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Claim Button */}
-              <div className="flex justify-center" style={{ marginTop: '28px' }}>
+              {/* Imprint Button */}
+              <div className="flex justify-center" style={{ marginTop: '32px' }}>
                 <motion.button
                   className="relative group"
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  onClick={handleActCompleteClaim}
+                  onClick={handleImprint}
                 >
-                  <div className="absolute -inset-2 bg-green-400/25 rounded-lg blur-xl" />
-                  <div className="absolute inset-0 translate-y-1 bg-green-700 rounded-lg" />
-                  <div className="relative flex items-center justify-center bg-gradient-to-b from-green-400 to-green-500 text-white font-bold rounded-lg border-t border-green-300/40" style={{ width: '140px', height: '42px' }}>
-                    <span className="text-lg tracking-wider drop-shadow">CLAIM</span>
+                  <div className="absolute -inset-2 bg-purple-400/25 rounded-lg blur-xl" />
+                  <div className="absolute inset-0 translate-y-1 bg-purple-700 rounded-lg" />
+                  <div className="relative flex items-center justify-center bg-gradient-to-b from-purple-400 to-purple-500 text-white font-bold rounded-lg border-t border-purple-300/40" style={{ width: '160px', height: '48px' }}>
+                    <span className="text-xl tracking-wider drop-shadow">IMPRINT</span>
                   </div>
                 </motion.button>
               </div>

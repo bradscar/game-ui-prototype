@@ -1,15 +1,26 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { Settings, Home, ArrowUp, Lock, ChevronDown } from 'lucide-react';
+import { User, Home, ArrowUp, Lock, ChevronDown, Star, Map } from 'lucide-react';
 
 const tabs = [
-  { id: 'settings', icon: Settings, label: 'Settings' },
+  { id: 'mystery', icon: Star, label: '???' },
+  { id: 'hero', icon: User, label: 'Hero' },
   { id: 'home', icon: Home, label: 'Home' },
   { id: 'skill', icon: ArrowUp, label: 'Skill' },
+  { id: 'map', icon: Map, label: 'Map' },
 ];
 
-export default function BottomNav({ activeTab, onTabChange, ftueStep }) {
+export default function BottomNav({ activeTab, onTabChange, ftueStep, coins = 0, skills = {} }) {
   const isSkillLocked = ftueStep === 'play';
   const showSkillArrow = ftueStep === 'skill-tab';
+  const isHeroLocked = ['play', 'skill-tab', 'upgrade', 'grinding'].includes(ftueStep);
+  const showHeroArrow = ftueStep === 'hero-tab';
+  const isMysteryLocked = true; // Always locked
+  const isMapLocked = ftueStep !== 'complete'; // Unlocked after FTUE
+
+  // Calculate if skill upgrade is available
+  const totalSkillLevels = Object.values(skills).reduce((sum, level) => sum + level, 0);
+  const upgradeCost = 100 + (totalSkillLevels * 50);
+  const canUpgrade = !isSkillLocked && coins >= upgradeCost;
 
   return (
     <nav className="absolute bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-lg border-t border-slate-700/50">
@@ -18,20 +29,29 @@ export default function BottomNav({ activeTab, onTabChange, ftueStep }) {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
           const isSkillTab = tab.id === 'skill';
-          const isDisabled = ftueStep !== 'complete' && (
+          const isHeroTab = tab.id === 'hero';
+          const isMysteryTab = tab.id === 'mystery';
+          const isMapTab = tab.id === 'map';
+
+          // Mystery tab is always disabled, Map disabled until FTUE complete
+          const isDisabled = isMysteryTab || (isMapTab && isMapLocked) || (ftueStep !== 'complete' && (
             (ftueStep === 'play' && tab.id !== 'home') ||
             (ftueStep === 'skill-tab' && tab.id !== 'skill') ||
-            (ftueStep === 'upgrade' && tab.id !== 'skill')
-          );
+            (ftueStep === 'upgrade' && tab.id !== 'skill') ||
+            (ftueStep === 'grinding' && tab.id === 'hero') ||
+            (ftueStep === 'hero-tab' && tab.id !== 'hero') ||
+            (ftueStep === 'equip' && tab.id !== 'hero')
+          ));
 
-          // For skill tab during FTUE lock, show lock icon instead
-          const showLockIcon = isSkillTab && isSkillLocked;
+          // Show lock icon for locked tabs
+          const showLockIcon = (isSkillTab && isSkillLocked) || (isHeroTab && isHeroLocked) || (isMysteryTab && isMysteryLocked) || (isMapTab && isMapLocked);
+          const showArrow = (isSkillTab && showSkillArrow) || (isHeroTab && showHeroArrow);
 
           return (
             <motion.button
               key={tab.id}
               onClick={() => !isDisabled && onTabChange(tab.id)}
-              className={`relative flex flex-col items-center justify-center w-16 h-16 rounded-2xl transition-colors ${
+              className={`relative flex flex-col items-center justify-center w-14 h-14 rounded-xl transition-colors ${
                 isDisabled
                   ? 'text-slate-700 cursor-not-allowed'
                   : isActive
@@ -43,7 +63,7 @@ export default function BottomNav({ activeTab, onTabChange, ftueStep }) {
               {isActive && (
                 <motion.div
                   layoutId="activeTab"
-                  className="absolute inset-0 bg-purple-500/20 rounded-2xl"
+                  className="absolute inset-0 bg-purple-500/20 rounded-xl"
                   transition={{ type: 'spring', bounce: 0.3, duration: 0.4 }}
                 />
               )}
@@ -60,7 +80,7 @@ export default function BottomNav({ activeTab, onTabChange, ftueStep }) {
                     }}
                     transition={{ duration: 0.4 }}
                   >
-                    <Lock size={24} className="text-slate-600" />
+                    <Lock size={20} className="text-slate-600" />
                   </motion.div>
                 ) : (
                   <motion.div
@@ -69,7 +89,7 @@ export default function BottomNav({ activeTab, onTabChange, ftueStep }) {
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ duration: 0.3, delay: 0.2 }}
                   >
-                    <Icon size={24} strokeWidth={isActive ? 2.5 : 2} />
+                    <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -97,9 +117,9 @@ export default function BottomNav({ activeTab, onTabChange, ftueStep }) {
                 )}
               </AnimatePresence>
 
-              {/* Bouncing arrow for skill tab */}
+              {/* Bouncing arrow for skill/hero tab */}
               <AnimatePresence>
-                {isSkillTab && showSkillArrow && (
+                {showArrow && (
                   <motion.div
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -115,6 +135,11 @@ export default function BottomNav({ activeTab, onTabChange, ftueStep }) {
                   </motion.div>
                 )}
               </AnimatePresence>
+
+              {/* Red indicator for skill upgrade available */}
+              {isSkillTab && canUpgrade && !isActive && (
+                <div className="absolute top-1 right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-slate-900" />
+              )}
             </motion.button>
           );
         })}

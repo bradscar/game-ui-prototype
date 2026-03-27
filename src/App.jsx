@@ -3,14 +3,16 @@ import { AnimatePresence, motion } from 'framer-motion';
 import MobileFrame from './components/MobileFrame';
 import BottomNav from './components/BottomNav';
 import HomeScreen from './screens/HomeScreen';
-import SettingsScreen from './screens/SettingsScreen';
+import HeroScreen from './screens/HeroScreen';
 import SkillScreen from './screens/MapScreen';
+import WorldMapScreen from './screens/WorldMapScreen';
 
 function App() {
   const [activeTab, setActiveTab] = useState('home');
 
-  // FTUE state: 'play' -> 'skill-tab' -> 'upgrade' -> 'complete'
+  // FTUE state: 'play' -> 'skill-tab' -> 'upgrade' -> 'grinding' -> 'hero-tab' -> 'equip' -> 'complete'
   const [ftueStep, setFtueStep] = useState('play');
+  const [runCount, setRunCount] = useState(0); // Track number of runs for gear unlock
 
   // Currency state (lifted from HomeScreen)
   const [coins, setCoins] = useState(0);
@@ -37,12 +39,30 @@ function App() {
     armor: 0,
   });
 
+  // Hero/Gear state
+  const [inventory, setInventory] = useState([]);
+  const [equipped, setEquipped] = useState({
+    helmet: null,
+    chest: null,
+    boots: null,
+    weapon: null,
+    shield: null,
+    ring: null,
+  });
+  const [pendingGear, setPendingGear] = useState(null); // Gear to add after animation
+
+  // Imprints state - saved character snapshots
+  const [imprints, setImprints] = useState([]);
+
   // Handle tab change with FTUE restrictions
   const handleTabChange = (tabId) => {
     // During FTUE, only allow specific tabs
+    if (ftueStep === 'play') return;
     if (ftueStep === 'skill-tab' && tabId !== 'skill') return;
-    if (ftueStep === 'play') return; // Can't change tabs during play step
     if (ftueStep === 'upgrade' && tabId !== 'skill') return;
+    if (ftueStep === 'grinding' && tabId === 'hero') return; // Hero still locked during grinding
+    if (ftueStep === 'hero-tab' && tabId !== 'hero') return;
+    if (ftueStep === 'equip' && tabId !== 'hero') return;
     setActiveTab(tabId);
   };
 
@@ -58,6 +78,12 @@ function App() {
     ftueStep, setFtueStep,
     skills, // Pass skills for progression calculation
     lastRunSkillLevels, setLastRunSkillLevels,
+    runCount, setRunCount,
+    pendingGear, setPendingGear,
+    setActiveTab, // For navigating to hero tab after gear reward
+    inventory, setInventory,
+    equipped,
+    imprints, setImprints,
   };
 
   // Render the active screen with props
@@ -67,8 +93,19 @@ function App() {
         return <HomeScreen {...progressProps} />;
       case 'skill':
         return <SkillScreen coins={coins} setCoins={setCoins} skills={skills} setSkills={setSkills} ftueStep={ftueStep} setFtueStep={setFtueStep} />;
-      case 'settings':
-        return <SettingsScreen />;
+      case 'hero':
+        return <HeroScreen
+          inventory={inventory}
+          setInventory={setInventory}
+          equipped={equipped}
+          setEquipped={setEquipped}
+          ftueStep={ftueStep}
+          setFtueStep={setFtueStep}
+          pendingGear={pendingGear}
+          setPendingGear={setPendingGear}
+        />;
+      case 'map':
+        return <WorldMapScreen />;
       default:
         return <HomeScreen {...progressProps} />;
     }
@@ -90,7 +127,7 @@ function App() {
           </motion.div>
         </AnimatePresence>
 
-        <BottomNav activeTab={activeTab} onTabChange={handleTabChange} ftueStep={ftueStep} />
+        <BottomNav activeTab={activeTab} onTabChange={handleTabChange} ftueStep={ftueStep} coins={coins} skills={skills} />
       </div>
     </MobileFrame>
   );
